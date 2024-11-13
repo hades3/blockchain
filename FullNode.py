@@ -22,9 +22,19 @@ class FullNode:
             utxoes = json.load(f)["utxos"]
             for utxo in utxoes:
                 key = utxo["txid"] + ':' + str(utxo["vout"])
-                if (self.UTXOSet.get(key) == None):    # 중복 방지를 위한 확인
+                if self.UTXOSet.get(key) is None:    # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
 
-# testNode = FullNode()
-# print(testNode.transactionSet)
-# print(testNode.UTXOSet)
+    def validate_utxo(self):
+        for transaction_txid in self.transactionSet:
+            for utxo in self.transactionSet[transaction_txid]["vin"]:
+                key = utxo["txid"] + ':' + str(utxo["vout"])
+                if self.UTXOSet.get(key) is not None:
+                    locking_script = self.UTXOSet[key]["scriptPubKey"]
+                    print(locking_script)
+
+
+testNode = FullNode()
+print(testNode.transactionSet)
+print(testNode.UTXOSet)
+testNode.validate_utxo()
