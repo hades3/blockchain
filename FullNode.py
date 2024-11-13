@@ -21,10 +21,10 @@ class FullNode:
         with open(os.getenv('UTXO_FILE_PATH')) as f:
             utxoes = json.load(f)["utxos"]
             for utxo in utxoes:
-                txid = utxo["txid"]
+                txid = utxo["txid"] + ':' + str(utxo["vout"])
                 if (self.UTXOSet.get(txid) == None):    # 중복 방지를 위한 확인
                     self.UTXOSet[txid] = utxo
 
-# testNode = FullNode()
-# print(testNode.transactionSet)
-# print(testNode.UTXOSet)
+testNode = FullNode()
+print(testNode.transactionSet)
+print(testNode.UTXOSet)
