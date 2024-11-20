@@ -1,6 +1,5 @@
-import json
+import json, os, hashlib
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -25,6 +24,11 @@ class FullNode:
                 if self.UTXOSet.get(key) is None:    # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
 
+    def hash160(self, target):
+        sha256_hash = hashlib.sha256(target.encode("utf-8")).digest()   # 해싱한 바이트 문자열 반환
+        ripemd160_hash = hashlib.new('ripemd160', sha256_hash).hexdigest()  # 해싱한 바이트 문자열을 16진수로 변환
+        return ripemd160_hash
+
     def validate_utxo(self):
         for transaction_txid in self.transactionSet:
             for utxo in self.transactionSet[transaction_txid]["vin"]:
@@ -37,4 +41,4 @@ class FullNode:
 testNode = FullNode()
 print(testNode.transactionSet)
 print(testNode.UTXOSet)
-testNode.validate_utxo()
+testNode.verify_utxo()
