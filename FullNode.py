@@ -1,5 +1,6 @@
-import json, os, hashlib
+import json, os, hashlib, base64
 from dotenv import load_dotenv
+from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
 load_dotenv()
 
@@ -13,32 +14,87 @@ class FullNode:
             transactions = json.load(f)["transactions"]
             for transaction in transactions:
                 txid = transaction["txid"]
-                if (self.transactionSet.get(txid) == None): # 중복 방지를 위한 확인
+                if self.transactionSet.get(txid) is None: # 중복 방지를 위한 확인
                     self.transactionSet[txid] = transaction
 
         # UTXO 파일을 읽어 UTXO set에 저장
         with open(os.getenv('UTXO_FILE_PATH')) as f:
-            utxoes = json.load(f)["utxos"]
+            utxoes = json.load(f)["utxos"]  
             for utxo in utxoes:
                 key = utxo["txid"] + ':' + str(utxo["vout"])
                 if self.UTXOSet.get(key) is None:    # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
 
+    # sha256, ripemd160 해시
     def hash160(self, target):
         sha256_hash = hashlib.sha256(target.encode("utf-8")).digest()   # 해싱한 바이트 문자열 반환
         ripemd160_hash = hashlib.new('ripemd160', sha256_hash).hexdigest()  # 해싱한 바이트 문자열을 16진수로 변환
         return ripemd160_hash
 
-    def validate_utxo(self):
+    def verify_utxo(self):
         for transaction_txid in self.transactionSet:
             for utxo in self.transactionSet[transaction_txid]["vin"]:
-                key = utxo["txid"] + ':' + str(utxo["vout"])
-                if self.UTXOSet.get(key) is not None:
-                    locking_script = self.UTXOSet[key]["scriptPubKey"]
-                    print(locking_script)
+                stack = []
 
+                key = utxo["txid"] + ':' + str(utxo["vout"])
+                if self.UTXOSet.get(key) is None:
+                    continue
+
+                unlocking_script = utxo["scriptSig"].split()
+                locking_script = self.UTXOSet[key]["scriptPubKey"].split()
+                condition_result = "NONE"
+
+                for element in unlocking_script:
+                    stack.append(element)
+
+                for element in locking_script:
+                    print(element)
+                    if condition_result == "FALSE":
+                        if element == "ELSE":
+                            condition_result = True
+                        continue
+
+                    # DUP
+                    if element == "DUP":
+                        stack.append(stack[-1])
+                    # HASH
+                    elif element == "HASH":
+                        stack_top = stack.pop()
+                        stack.append(self.hash160(stack_top))
+                    # EQUAL
+                    elif element == "EQUAL":
+                        stack_top_first = stack.pop()
+                        stack_top_second = stack.pop()
+                        if stack_top_first == stack_top_second:
+                            stack.append("TRUE")
+                        else:
+                            stack.append("FALSE")
+                    # EQUALVERIFY
+                    elif element == "EQUALVERIFY":
+                        stack_top_first = stack.pop()
+                        stack_top_second = stack.pop()
+                        if stack_top_first != stack_top_second:
+                            break
+                    # CHECKSIG
+                    elif element == "CHECKSIG":
+                        pubKey = stack.pop()
+                        sig = stack.pop()
+                        transaction = self.transactionSet[transaction_txid]
+                        verify_result = self.verify_signature(transaction, sig, pubKey)
+                        stack.append(verify_result)
+                    # IF
+                    elif element == "IF":
+                        condition_result = stack.pop()
+                    elif element == "ENDIF":
+                        continue
+                    else:
+                        stack.append(element)
+
+                # CHECKFINALRESULT
+                if len(stack) == 1 and stack.pop() == "TRUE":
+                    return "passed"
+                else:
+                    return "failed"
 
 testNode = FullNode()
-print(testNode.transactionSet)
-print(testNode.UTXOSet)
-testNode.verify_utxo()
+print(testNode.verify_utxo())
