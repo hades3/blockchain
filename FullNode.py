@@ -51,7 +51,32 @@ class FullNode:
             vin_data = {key: value for key, value in vin.items() if key != "scriptSig"}
             result["vin"].append(vin_data)
 
-        return result
+        return json.dumps(result)
+
+    # 서명 검증
+    def verify_signature(self, transaction, sig, pubKey):
+        # 트랜잭션에서 scriptSig 제외
+        exclude_scriptSig_transaction = self.exclude_scriptSig(transaction)
+        # 해시
+        hashed_exclude_scriptSig_transaction = self.hash160(exclude_scriptSig_transaction)
+        # 바이트로 변환
+        hashed_exclude_scriptSig_transaction = bytes.fromhex(hashed_exclude_scriptSig_transaction)
+
+        # 문자열로 전달된 sig를 bytes로 변환
+        sig = bytes.fromhex(sig)
+
+        # 문자열로 전달된 pubKey를 객체로 변환
+        pubKey = VerifyingKey.from_string(bytes.fromhex(pubKey), curve=SECP256k1)
+
+        # 검증
+        try:
+            if pubKey.verify(sig, hashed_exclude_scriptSig_transaction):
+                return "TRUE"
+            else:
+                return "FALSE"
+        except Exception:
+            return "FALSE"
+
 
     def verify_utxo(self):
         for transaction_txid in self.transactionSet:
