@@ -1,4 +1,4 @@
-import json, os, hashlib, base64
+import json, os, hashlib
 from dotenv import load_dotenv
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
@@ -80,7 +80,9 @@ class FullNode:
 
     def verify_utxo(self):
         for transaction_txid in self.transactionSet:
-            for utxo in self.transactionSet[transaction_txid]["vin"]:
+            transaction = self.transactionSet[transaction_txid]
+            failed_inst = "NONE"
+            for utxo in transaction["vin"]:
                 stack = []
 
                 key = utxo["txid"] + ':' + str(utxo["vout"])
@@ -95,7 +97,6 @@ class FullNode:
                     stack.append(element)
 
                 for element in locking_script:
-                    print(element)
                     if condition_result == "FALSE":
                         if element == "ELSE":
                             condition_result = True
@@ -115,20 +116,40 @@ class FullNode:
                         if stack_top_first == stack_top_second:
                             stack.append("TRUE")
                         else:
+                            failed_inst = element
                             stack.append("FALSE")
                     # EQUALVERIFY
                     elif element == "EQUALVERIFY":
                         stack_top_first = stack.pop()
                         stack_top_second = stack.pop()
                         if stack_top_first != stack_top_second:
+                            failed_inst = element
                             break
                     # CHECKSIG
                     elif element == "CHECKSIG":
                         pubKey = stack.pop()
                         sig = stack.pop()
-                        transaction = self.transactionSet[transaction_txid]
-                        verify_result = self.verify_signature(transaction, sig, pubKey)
-                        stack.append(verify_result)
+                        if self.verify_signature(transaction, sig, pubKey) == "TRUE":
+                            stack.append("TRUE")
+                        else:
+                            failed_inst = element
+                            stack.append("FALSE")
+                    # CHECKMULTISIG
+                    elif element == "CHECKMULTISIG":
+                        n = int(stack.pop())
+                        pubKeys = [stack.pop() for _ in range(n)]
+                        m = int(stack.pop())
+                        for i in range(m):
+                            sig = stack.pop()
+                            for j in range(n):
+                                if self.verify_signature(transaction, sig, pubKeys[j]) == "TRUE":
+                                    m -= 1
+                                    break
+                        if m <= 0:
+                            stack.append("TRUE")
+                        else:
+                            failed_inst = element
+                            stack.append("FALSE")
                     # IF
                     elif element == "IF":
                         condition_result = stack.pop()
@@ -137,11 +158,17 @@ class FullNode:
                     else:
                         stack.append(element)
 
+                print("### 트랜잭션 검증 시작 ###")
+                print(transaction)
+
                 # CHECKFINALRESULT
                 if len(stack) == 1 and stack.pop() == "TRUE":
-                    return "passed"
+                    print("valid check: passed")
                 else:
-                    return "failed"
+                    print("valid check: failed at", failed_inst)
+
+                print("### 트랜잭션 검증 끝 ###")
+                print()
 
 testNode = FullNode()
-print(testNode.verify_utxo())
+testNode.verify_utxo()
