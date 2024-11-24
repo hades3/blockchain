@@ -31,6 +31,28 @@ class FullNode:
         ripemd160_hash = hashlib.new('ripemd160', sha256_hash).hexdigest()  # 해싱한 바이트 문자열을 16진수로 변환
         return ripemd160_hash
 
+    # 트랜잭션에서 scriptSig 제외
+    def exclude_scriptSig(self, transaction_json):
+        result = {
+            "txid": transaction_json["txid"],
+            "hash": transaction_json["hash"],
+            "version": transaction_json["version"],
+            "size": transaction_json["size"],
+            "locktime": transaction_json["locktime"],
+            "vin": [],
+            "vout": transaction_json["vout"],
+            "blockhash": transaction_json["blockhash"],
+            "confirmations": transaction_json["confirmations"],
+            "time": transaction_json["time"],
+            "blocktime": transaction_json["blocktime"]
+        }
+
+        for vin in transaction_json["vin"]:
+            vin_data = {key: value for key, value in vin.items() if key != "scriptSig"}
+            result["vin"].append(vin_data)
+
+        return result
+
     def verify_utxo(self):
         for transaction_txid in self.transactionSet:
             for utxo in self.transactionSet[transaction_txid]["vin"]:
