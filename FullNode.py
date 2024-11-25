@@ -78,6 +78,22 @@ class FullNode:
         except Exception:
             return "FALSE"
 
+    def verify_amount(self, transaction):
+        utxo_sum = 0
+        output_sum = 0
+
+        for utxo in transaction["vin"]:
+            key = utxo["txid"] + ':' + str(utxo["vout"])
+            if self.UTXOSet.get(key) is None:
+                return False
+            utxo = self.UTXOSet.get(key)
+            utxo_sum += utxo["value"]
+
+        for output in transaction["vout"]:
+            output_sum += output["value"]
+
+        return utxo_sum >= output_sum
+
     def verify_script(self, transaction, unlocking_script, locking_script):
         stack = []
         failed_inst = "NONE"
@@ -85,7 +101,6 @@ class FullNode:
 
         for element in unlocking_script:
             stack.append(element)
-
 
         for element in locking_script:
 
@@ -167,6 +182,9 @@ class FullNode:
         for transaction_txid in self.transactionSet:
             transaction = self.transactionSet[transaction_txid]
 
+            # 검증 결과 저장, amount가 가능한 지 여부로 초기화
+            verify_result = self.verify_amount(transaction)
+
             for utxo in transaction["vin"]:
 
                 key = utxo["txid"] + ':' + str(utxo["vout"])
@@ -180,7 +198,7 @@ class FullNode:
 
                 # for P2SH
                 if locking_script[-1] == "EQUALVERIFY":
-                    result_stack, failed_inst = self.verify_script(transaction, [], [unlocking_script]+locking_script)
+                    result_stack, failed_inst = self.verify_script(transaction, [], [unlocking_script] + locking_script)
 
                 if len(result_stack) == 1 and result_stack.pop() == unlocking_script:
                     unlocking_script = unlocking_script.split()
