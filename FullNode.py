@@ -207,17 +207,17 @@ class FullNode:
                     unlocking_script = unlocking_script.split()
                     result_stack, failed_inst = self.verify_script(transaction, unlocking_script, locking_script)
 
-                print("### 트랜잭션 검증 결과 시작 ###")
-                print(transaction)
-
                 if len(result_stack) == 1 and result_stack.pop() == "TRUE":
-                    print("valid check: passed")
+                    verify_result = True
                 else:
-                    print("valid check: failed at", failed_inst)
+                    verify_result = False
 
-                print("### 트랜잭션 검증 결과 끝 ###")
-                print()
-
+            print(transaction)
+            print("valid check:", end=" ")
+            if verify_result is True:
+                print("passed")
+            else:
+                print("failed at", failed_inst)
 
 testNode = FullNode()
 testNode.verify_utxo()
