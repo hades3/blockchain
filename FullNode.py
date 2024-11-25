@@ -26,6 +26,16 @@ class FullNode:
                 if self.UTXOSet.get(key) is None:  # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
 
+    # output을 utxo 집합에 추가하기 위해 형식 변환
+    def output_to_utxo(self, txid, output):
+        result = {
+            "txid": txid,
+            "vout": output["n"],
+            "value": output["value"],
+            "scriptPubKey": output["scriptPubKey"],
+        }
+        return result
+
     # sha256, ripemd160 해시
     def hash160(self, target):
         sha256_hash = hashlib.sha256(target.encode("utf-8")).digest()  # 해싱한 바이트 문자열 반환
@@ -221,7 +231,13 @@ class FullNode:
 
             print(transaction)
 
+            # 검증 결과가 올바르면, UTXO를 UTXOset에서 제거하고, output들을 UTXOset에 추가
             if verify_result is True:
+                self.UTXOSet.pop(key)
+                for output in transaction["vout"]:
+                    key = transaction_txid + ':' + str(output["n"])
+                    if self.UTXOSet.get(key) is None:
+                        self.UTXOSet[key] = self.output_to_utxo(transaction_txid, output)
 
                 print("valid check: passed")
             else:
@@ -229,3 +245,4 @@ class FullNode:
 
 testNode = FullNode()
 testNode.verify_utxo()
+print(testNode.UTXOSet)
