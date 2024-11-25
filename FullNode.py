@@ -82,8 +82,8 @@ class FullNode:
         utxo_sum = 0
         output_sum = 0
 
-        for utxo in transaction["vin"]:
-            key = utxo["txid"] + ':' + str(utxo["vout"])
+        for input in transaction["vin"]:
+            key = input["txid"] + ':' + str(input["vout"])
             if self.UTXOSet.get(key) is None:
                 return False
             utxo = self.UTXOSet.get(key)
@@ -182,16 +182,23 @@ class FullNode:
         for transaction_txid in self.transactionSet:
             transaction = self.transactionSet[transaction_txid]
 
-            # 검증 결과 저장, amount가 가능한 지 여부로 초기화
+            # 검증 결과 저장, 금액 검증 여부로 초기화
             verify_result = self.verify_amount(transaction)
 
-            for utxo in transaction["vin"]:
+            # 금액 검증이 실패하면, 실패 메세지 출력
+            if verify_result is False:
+                print(transaction)
+                print("valid check: failed, Not enough money")
+                continue
 
-                key = utxo["txid"] + ':' + str(utxo["vout"])
+            # 스크립트 검증
+            for input in transaction["vin"]:
+
+                key = input["txid"] + ':' + str(input["vout"])
                 if self.UTXOSet.get(key) is None:
                     continue
 
-                unlocking_script = utxo["scriptSig"]
+                unlocking_script = input["scriptSig"]
                 locking_script = self.UTXOSet[key]["scriptPubKey"].split()
 
                 result_stack = []
@@ -213,11 +220,12 @@ class FullNode:
                     verify_result = False
 
             print(transaction)
-            print("valid check:", end=" ")
+
             if verify_result is True:
-                print("passed")
+
+                print("valid check: passed")
             else:
-                print("failed at", failed_inst)
+                print("valid check: failed at", failed_inst)
 
 testNode = FullNode()
 testNode.verify_utxo()
