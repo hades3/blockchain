@@ -4,11 +4,11 @@ from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
 load_dotenv()
 
-
 class FullNode:
     def __init__(self):
         self.transactionSet = dict()  # 검색, 삭제를 용이하게 하기 위해 딕셔너리로 생성
         self.UTXOSet = dict()
+        self.processedTransactionInfo = list()
 
         # 트랜잭션 파일을 읽어 Transaction set에 저장
         with open(os.getenv('TRANSITION_FILE_PATH')) as f:
@@ -25,6 +25,8 @@ class FullNode:
                 key = utxo["txid"] + ':' + str(utxo["vout"])
                 if self.UTXOSet.get(key) is None:  # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
+
+        self.verify_utxo()
 
     # output을 utxo 집합에 추가하기 위해 형식 변환
     def output_to_utxo(self, txid, output):
@@ -199,6 +201,7 @@ class FullNode:
             if verify_result is False:
                 print(transaction)
                 print("valid check: failed, Not enough money")
+                self.processedTransactionInfo.append((transaction_txid, "failed"))
                 continue
 
             # 스크립트 검증
@@ -206,6 +209,9 @@ class FullNode:
 
                 key = input["txid"] + ':' + str(input["vout"])
                 if self.UTXOSet.get(key) is None:
+                    print(transaction)
+                    print("valid check: failed, utxo not exist")
+                    self.processedTransactionInfo.append((transaction_txid, "failed"))
                     continue
 
                 unlocking_script = input["scriptSig"]
@@ -239,9 +245,11 @@ class FullNode:
                     if self.UTXOSet.get(key) is None:
                         self.UTXOSet[key] = self.output_to_utxo(transaction_txid, output)
 
-                print("valid check: passed")
+                self.processedTransactionInfo.append((transaction_txid, "passed"))
+                print("validity check: passed")
             else:
-                print("valid check: failed at", failed_inst)
+                self.processedTransactionInfo.append((transaction_txid, "failed"))
+                print("validity check: failed at", failed_inst)
 
 testNode = FullNode()
 testNode.verify_utxo()
