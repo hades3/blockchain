@@ -39,16 +39,14 @@ class FullNode:
         return result
 
     # sha256, ripemd160 해시
-    def hash160(self, target):
-        sha256_hash = hashlib.sha256(target.encode("utf-8")).digest()  # 해싱한 바이트 문자열 반환
+    def hash160(self, data):
+        sha256_hash = hashlib.sha256(data.encode("utf-8")).digest()  # 해싱한 바이트 문자열 반환
         ripemd160_hash = hashlib.new('ripemd160', sha256_hash).hexdigest()  # 해싱한 바이트 문자열을 16진수로 변환
         return ripemd160_hash
 
     # 트랜잭션에서 scriptSig 제외
     def exclude_scriptSig(self, transaction_json):
         result = {
-            "txid": transaction_json["txid"],
-            "hash": transaction_json["hash"],
             "version": transaction_json["version"],
             "size": transaction_json["size"],
             "locktime": transaction_json["locktime"],
@@ -97,22 +95,38 @@ class FullNode:
         for input in transaction["vin"]:
             key = input["txid"] + ':' + str(input["vout"])
             if self.UTXOSet.get(key) is None:
+                print(transaction)
+                print("valid check: failed, utxo not exist")
+                self.processedTransactionInfo.append((transaction["txid"], "failed"))
                 return False
+
             utxo = self.UTXOSet.get(key)
             utxo_sum += utxo["value"]
 
         for output in transaction["vout"]:
             output_sum += output["value"]
 
-        return utxo_sum >= output_sum
+        if utxo_sum >= output_sum:
+            return True
+        else:
+            print(transaction)
+            print("valid check: failed, Not enough money")
+            self.processedTransactionInfo.append((transaction["txid"], "failed"))
+            return False
 
     def verify_script(self, transaction, unlocking_script, locking_script):
+        locking_script = locking_script.split()
         stack = []
         failed_inst = "NONE"
         flag = 1  # 1이면 고려, 0이면 무시
 
-        for element in unlocking_script:
-            stack.append(element)
+        # for P2SH
+        if locking_script[-1] == "EQUALVERIFY":
+            stack.append(unlocking_script)
+        # else
+        else:
+            for element in unlocking_script.split():
+                stack.append(element)
 
         for element in locking_script:
 
@@ -159,7 +173,9 @@ class FullNode:
                 stack_top_second = stack.pop()
                 if stack_top_first != stack_top_second:
                     failed_inst = element
-                    break
+                    return False, failed_inst
+                else:
+                    failed_inst = "NONE"
             # CHECKSIG
             elif element == "CHECKSIG":
                 pubKey = stack.pop()
@@ -169,6 +185,13 @@ class FullNode:
                 else:
                     failed_inst = element
                     stack.append("FALSE")
+            # CHECKSIGVERIFY
+            elif element == "CHECKSIGVERIFY":
+                pubKey = stack.pop()
+                sig = stack.pop()
+                if self.verify_signature(transaction, sig, pubKey) != "TRUE":
+                    failed_inst = element
+                    return False, failed_inst
             # CHECKMULTISIG
             elif element == "CHECKMULTISIG":
                 n = int(stack.pop())
@@ -181,76 +204,83 @@ class FullNode:
                             m -= 1
                             break
                 if m <= 0:
+                    failed_inst = "NONE"
                     stack.append("TRUE")
                 else:
                     failed_inst = element
                     stack.append("FALSE")
+            elif element == "CHECKMULTISIGVERIFY":
+                n = int(stack.pop())
+                pubKeys = [stack.pop() for _ in range(n)]
+                m = int(stack.pop())
+                for i in range(m):
+                    sig = stack.pop()
+                    for j in range(n):
+                        if self.verify_signature(transaction, sig, pubKeys[j]) == "TRUE":
+                            m -= 1
+                            break
+                if m <= 0:
+                    failed_inst = "NONE"
+                else:
+                    failed_inst = element
+                    return False, failed_inst
             else:
                 stack.append(element)
 
-        return stack, failed_inst
+        if locking_script[-1] == "EQUALVERIFY":
+            if len(stack) == 1 and stack.pop() == unlocking_script:
+                return self.verify_script(transaction, "", unlocking_script)
+        else:
+            if len(stack) == 1 and stack.pop() == "TRUE":
+                return True, failed_inst
+            else:
+                return False, failed_inst
 
     def verify_utxo(self):
         for transaction_txid in self.transactionSet:
             transaction = self.transactionSet[transaction_txid]
 
-            # 검증 결과 저장, 금액 검증 여부로 초기화
-            verify_result = self.verify_amount(transaction)
+            verify_result = True
 
             # 금액 검증이 실패하면, 실패 메세지 출력
-            if verify_result is False:
-                print(transaction)
-                print("valid check: failed, Not enough money")
-                self.processedTransactionInfo.append((transaction_txid, "failed"))
-                continue
+            if self.verify_amount(transaction) is False:
+                break
 
             # 스크립트 검증
             for input in transaction["vin"]:
 
                 key = input["txid"] + ':' + str(input["vout"])
-                if self.UTXOSet.get(key) is None:
-                    print(transaction)
-                    print("valid check: failed, utxo not exist")
-                    self.processedTransactionInfo.append((transaction_txid, "failed"))
-                    continue
 
                 unlocking_script = input["scriptSig"]
-                locking_script = self.UTXOSet[key]["scriptPubKey"].split()
+                locking_script = self.UTXOSet[key]["scriptPubKey"]
 
-                result_stack = []
+                verify_result, failed_inst, = self.verify_script(transaction, unlocking_script, locking_script)
 
-                # for P2SH
-                if locking_script[-1] == "EQUALVERIFY":
-                    result_stack, failed_inst = self.verify_script(transaction, [], [unlocking_script] + locking_script)
+                if verify_result is False:
+                    print(transaction)
+                    self.processedTransactionInfo.append((transaction_txid, "failed"))
+                    print("validity check: failed at", failed_inst)
+                    print()
+                    break
 
-                if len(result_stack) == 1 and result_stack.pop() == unlocking_script:
-                    unlocking_script = unlocking_script.split()
-                    result_stack, failed_inst = self.verify_script(transaction, [], unlocking_script)
-                else:
-                    unlocking_script = unlocking_script.split()
-                    result_stack, failed_inst = self.verify_script(transaction, unlocking_script, locking_script)
-
-                if len(result_stack) == 1 and result_stack.pop() == "TRUE":
-                    verify_result = True
-                else:
-                    verify_result = False
-
+            if verify_result is False:
+                continue
+            # 모든 UTXO가 검증을 통과하면, UTXO들을 UTXOset에서 제거하고, output들을 UTXOset에 추가
             print(transaction)
 
-            # 검증 결과가 올바르면, UTXO를 UTXOset에서 제거하고, output들을 UTXOset에 추가
-            if verify_result is True:
+            for input in transaction["vin"]:
+                key = input["txid"] + ':' + str(input["vout"])
                 self.UTXOSet.pop(key)
-                for output in transaction["vout"]:
-                    key = transaction_txid + ':' + str(output["n"])
-                    if self.UTXOSet.get(key) is None:
-                        self.UTXOSet[key] = self.output_to_utxo(transaction_txid, output)
 
-                self.processedTransactionInfo.append((transaction_txid, "passed"))
-                print("validity check: passed")
-            else:
-                self.processedTransactionInfo.append((transaction_txid, "failed"))
-                print("validity check: failed at", failed_inst)
+            for output in transaction["vout"]:
+                key = transaction_txid + ':' + str(output["n"])
+                if self.UTXOSet.get(key) is None:
+                    self.UTXOSet[key] = self.output_to_utxo(transaction_txid, output)
 
+            self.processedTransactionInfo.append((transaction_txid, "passed"))
+            print("validity check: passed")
+            print()
+
+        
 testNode = FullNode()
-testNode.verify_utxo()
 print(testNode.UTXOSet)
