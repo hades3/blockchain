@@ -1,6 +1,6 @@
 import json, os, hashlib
 from dotenv import load_dotenv
-from ecdsa import SigningKey, VerifyingKey, SECP256k1
+from ecdsa import VerifyingKey, SECP256k1
 
 load_dotenv()
 
@@ -25,8 +25,6 @@ class FullNode:
                 key = utxo["txid"] + ':' + str(utxo["vout"])
                 if self.UTXOSet.get(key) is None:  # 중복 방지를 위한 확인
                     self.UTXOSet[key] = utxo
-
-        self.verify_utxo()
 
     # output을 utxo 집합에 추가하기 위해 형식 변환
     def output_to_utxo(self, txid, output):
@@ -236,6 +234,7 @@ class FullNode:
             if len(stack) == 1 and stack.pop() == unlocking_script:
                 return self.verify_script(transaction, "", unlocking_script)
         else:
+            # CHECKFINALRESULT
             if len(stack) == 1 and stack.pop() == "TRUE":
                 return True, "NONE"
             else:
@@ -250,7 +249,8 @@ class FullNode:
 
             # 금액 검증이 실패하면, 실패 메세지 출력
             if self.verify_amount(transaction) is False:
-                break
+                print()
+                continue
 
             # 스크립트 검증
             for input in transaction["vin"]:
@@ -286,6 +286,3 @@ class FullNode:
             print(transaction)
             print("validity check: passed")
             print()
-
-        
-testNode = FullNode()
